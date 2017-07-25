@@ -1,0 +1,242 @@
+#!/bin/bash
+# ---------------------------------------------------------------------
+#  Script to backup/restore current user folders and application data
+#  on any removable media during computer complete reinstallation
+#
+#  Backup  :  ./data-transfer --backup ...
+#  Restore :  ./data-transfer --restore  ...
+#
+#  All backup files will be stored under current folder
+#
+#  Revision history :
+#   10/06/2016, V1.0 - Creation by N. Bernaerts
+#   15/08/2016, V1.1 - Add target directory
+#   10/04/2017, V1.2 - Add docky
+#   17/04/2017, V2.0 - Complete rewrite, based on .ini configuration
+# ---------------------------------------------------------------------
+
+# default to normal mode
+MODE="normal"
+
+# set working directory to current directory
+BACKUP_DIR=$(dirname $(readlink -f $0))
+
+# set configuration file
+CONF_INI="${BACKUP_DIR}/data-transfer.ini"
+
+# check commands
+command -v xdg-user-dir >/dev/null 2>&1 || { echo "Please install xdg-user-dir utility"; exit 1; }
+command -v gconftool-2 >/dev/null 2>&1 || { echo "Please install gconftool-2 utility"; exit 1; }
+command -v tar >/dev/null 2>&1 || { echo "Please install tar utility"; exit 1; }
+
+# check configuration file
+[ -f "${CONF_INI}" ] || { echo "Configuration file ${CONF_INI} is missing"; exit 1; }
+
+# load sections
+ARR_SECTION=( $(grep "^\[" "${CONF_INI}" | tr -d "[]") )
+
+# help message if no parameter
+if [ ${#} -eq 0 ];
+then
+	echo "Script to backup/restore user data between computers."
+	echo "General parameters :"
+	echo "  --backup     Backup user data to current folder"
+	echo "  --restore    Restore user data from current folder"
+	echo "  --name       Include application environment"      
+	echo "  --all        Include all found appplication environments"
+	echo "  --test       Test mode without real backup or restore"
+	echo "Recognised application environments are :"
+	echo "${ARR_SECTION[@]}"
+    exit 1
+fi
+
+# iterate thru parameters
+while test ${#} -gt 0
+do
+	case $1 in
+		--backup) OPERATION="backup"; shift; ;;
+		--restore) OPERATION="restore"; shift; ;;
+		--test) MODE="test"; shift; ;;
+		--all) ARR_TODO=( "${ARR_SECTION[@]}" ); shift; ;;
+		*) ARR_TODO=( "${ARR_TODO[@]}" "${1:2}" ); shift; ;;
+	esac
+done
+
+# check compulsory parameters
+[ "${OPERATION}" = "" ] && { echo "Please select --backup or --restore"; exit 1; }
+[ ${#ARR_TODO[*]} -eq 0 ] && { echo "Please select at least one application environment"; exit 1; }
+
+# loop thru sections
+for ENV_NAME in "${ARR_TODO[@]}"
+do
+	# load lines of current section
+	ARR_LINE=( $(sed -e "1,/\[${ENV_NAME}\]/d" "${BACKUP_DIR}/data-transfer.ini" | sed -e "/^\[/,\$d") )
+
+	# loop thru lines
+	for LINE in "${ARR_LINE[@]}"
+	do
+		# get parameters
+		ENV_ITEM=$(echo "${LINE}" | cut -d"=" -f1)
+		ENV_PATH=$(echo "${LINE}" | cut -d"=" -f2 | cut -d";" -f1)
+		ENV_PARAM=$(echo "${LINE}" | cut -d"=" -f2 | cut -d";" -f2)
+
+		# deal with XDG path
+		[ "${ENV_PARAM}" = "xdg" ] && ENV_PATH=$(xdg-user-dir "${ENV_PATH}")
+
+		# set relative path based on home directory
+		[ "${ENV_PATH:0:1}" != "/" ] && ENV_PATH="$HOME/${ENV_PATH}"
+
+		# set type according to path type (file of folder)
+		ENV_TYPE="unknown"
+		[ -f "${ENV_PATH}" ] && ENV_TYPE="file"
+		[ -d "${ENV_PATH}" ] && ENV_TYPE="folder"
+
+		# set type to tar if parameter is set and path is a folder
+		[ "${ENV_PARAM}" = "tar" -a "${ENV_TYPE}" = "folder" ] && ENV_TYPE="tar"
+
+		# set type to gconf if parameter is set
+		[ "${ENV_PARAM}" = "gconf" ] && ENV_TYPE="gconf"
+
+		# add $HOME root to a relative path
+		[ "${ENV_PATH:0:1}" != "/" ] && ENV_PATH="${HOME}/${ENV_PATH}"
+
+		# display
+		echo "-- ${OPERATION} of ${ENV_PATH} in ${ENV_TYPE} mode"
+			
+		# action according to environment type
+		case ${ENV_TYPE} in
+
+		"tar")
+			# backup mode
+			if [ "${OPERATION}" = "backup" ]
+			then
+				# if environment is present, backup
+				if [ -d "${ENV_PATH}" ]
+				then
+					[ "${MODE}" = "normal" ] && mkdir --parent "${BACKUP_DIR}/${ENV_NAME}"
+					[ "${MODE}" = "normal" ] && rm --force "${BACKUP_DIR}/${ENV_NAME}/${ENV_ITEM}.tar.gz"
+					[ "${MODE}" = "normal" ] && cd "${ENV_PATH}"
+					[ "${MODE}" = "normal" ] && tar -zcvf "${BACKUP_DIR}/${ENV_NAME}/${ENV_ITEM}.tar.gz" *
+					echo " -> Backed-up to ${BACKUP_DIR}/${ENV_NAME}/${ENV_ITEM}.tar.gz"
+
+				# else, error message
+				else
+					echo " -> Impossible as ${ENV_PATH} is absent"
+				fi
+
+			# restore mode
+			else
+				# if backup file is present, restore
+				if [ -f "${BACKUP_DIR}/${ENV_NAME}/${ENV_ITEM}.tar.gz" ]
+				then
+					[ "${MODE}" = "normal" ] && mkdir --parents "${ENV_PATH}"
+					[ "${MODE}" = "normal" ] && rm --force --recursive ${ENV_PATH}/*
+					[ "${MODE}" = "normal" ] && cd "${ENV_PATH}"
+					[ "${MODE}" = "normal" ] && tar -zxvf "${BACKUP_DIR}/${ENV_NAME}/${ENV_ITEM}.tar.gz"
+					echo " -> Restored from ${BACKUP_DIR}/${ENV_NAME}/${ENV_ITEM}.tar.gz"
+
+				# else, error message
+				else
+					echo " -> Impossible as ${BACKUP_DIR}/${ENV_NAME}/${ENV_ITEM}.tar.gz is absent"
+				fi
+			fi
+			;;
+
+		"folder")
+			# backup mode
+			if [ "${OPERATION}" = "backup" ]
+			then
+				# if environment is present, backup
+				if [ -d "${ENV_PATH}" ]
+				then
+					[ "${MODE}" = "normal" ] && mkdir --parent "${BACKUP_DIR}/${ENV_NAME}/${ENV_ITEM}"
+					[ "${MODE}" = "normal" ] && rm --recursive --force ${BACKUP_DIR}/${ENV_NAME}/${ENV_ITEM}/*
+					[ "${MODE}" = "normal" ] && cp --recursive --verbose ${ENV_PATH}/* "${BACKUP_DIR}/${ENV_NAME}/${ENV_ITEM}"
+					echo " -> Backed-up to ${BACKUP_DIR}/${ENV_NAME}/${ENV_ITEM}"
+
+				# else, error message
+				else
+					echo " -> Impossible as ${ENV_PATH} is absent"
+				fi
+
+			# restore mode
+			else
+				# if backup file is present, restore
+				if [ -d "${BACKUP_DIR}/${ENV_NAME}/${ENV_ITEM}" ]
+				then
+					[ "${MODE}" = "normal" ] && mkdir --parents "${ENV_PATH}"
+					[ "${MODE}" = "normal" ] && rm --recursive --force ${ENV_PATH}/*
+					[ "${MODE}" = "normal" ] && cp --recursive --verbose ${BACKUP_DIR}/${ENV_NAME}/${ENV_ITEM}/* "${ENV_PATH}"
+					echo " -> Restored from ${BACKUP_DIR}/${ENV_NAME}/${ENV_ITEM}"
+
+				# else, error message
+				else
+					echo " -> Impossible as ${BACKUP_DIR}/${ENV_NAME}/${ENV_ITEM} is absent"
+				fi
+			fi
+			;;
+
+		"file")
+			# get filename
+			ENV_FILE=$(basename "${ENV_PATH}")
+
+			# backup mode
+			if [ "${OPERATION}" = "backup" ]
+			then
+				# if environment is present, backup
+				if [ -f "${ENV_PATH}" ]
+				then
+					[ "${MODE}" = "normal" ] && mkdir --parent "${BACKUP_DIR}/${ENV_NAME}/${ENV_ITEM}"
+					[ "${MODE}" = "normal" ] && rm --recursive --force ${BACKUP_DIR}/${ENV_NAME}/${ENV_ITEM}/*
+					[ "${MODE}" = "normal" ] && cp ${ENV_PATH} "${BACKUP_DIR}/${ENV_NAME}/${ENV_ITEM}"
+					echo " -> Backed-up to ${BACKUP_DIR}/${ENV_NAME}/${ENV_ITEM}/${ENV_FILE}"
+
+				# else, error message
+				else
+					echo " -> Impossible as ${ENV_PATH} is absent"
+				fi
+
+			# restore mode
+			else
+				# if backup file is present, restore
+				if [ -f "${BACKUP_DIR}/${ENV_NAME}/${ENV_ITEM}/${ENV_FILE}" ]
+				then
+					[ "${MODE}" = "normal" ] && cp "${BACKUP_DIR}/${ENV_NAME}/${ENV_ITEM}/${ENV_FILE}" "${ENV_PATH}"
+					echo " -> Restored from ${BACKUP_DIR}/${ENV_NAME}/${ENV_ITEM}/${ENV_FILE}"
+
+				# else, error message
+				else
+					echo " -> Impossible as ${BACKUP_DIR}/${ENV_NAME}/${ENV_ITEM}/${ENV_FILE} is absent"
+				fi
+			fi
+			;;
+
+		"gconf")
+			# backup mode
+			if [ "${OPERATION}" = "backup" ]
+			then
+				[ "${MODE}" = "normal" ] && mkdir --parent "${BACKUP_DIR}/${ENV_NAME}"
+				[ "${MODE}" = "normal" ] && gconftool-2 --dump "${ENV_PATH}" > "${BACKUP_DIR}/${ENV_NAME}/${ENV_ITEM}.xml"
+				echo " -> Backed-up to ${BACKUP_DIR}/${ENV_NAME}/${ENV_ITEM}.xml"
+
+			# restore mode
+			else
+				# if backup file is present, restore
+				if [ -f "${BACKUP_DIR}/${ENV_NAME}/${ENV_ITEM}.xml" ]
+				then
+					[ "${MODE}" = "normal" ] && gconftool-2 --load "${BACKUP_DIR}/${ENV_NAME}/${ENV_ITEM}.xml"
+					echo " -> Restored from ${BACKUP_DIR}/${ENV_NAME}/${ENV_ITEM}.xml"
+
+				# else, error message
+				else
+					echo " -> Impossible as ${BACKUP_DIR}/${ENV_NAME}/${ENV_ITEM}.xml is absent"
+				fi
+			fi
+			;;
+
+		*)
+			echo " -> Impossible as file is absent or mode is unsupported"
+			;;
+		esac
+	done
+done

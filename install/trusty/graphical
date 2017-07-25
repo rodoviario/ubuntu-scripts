@@ -1,0 +1,69 @@
+#!/bin/sh
+# -------------------------------------------------------
+# Script to install graphical tools
+#
+# 20/12/2014, V1.0 - Creation by N. Bernaerts
+# 07/01/2015, V1.1 - Add image levels optimization extension
+# 25/04/2015, V1.2 - Add Graphviz thumbnailer
+# 16/04/2016, V1.3 - Add RawTherapee and Raw thumbnailer
+# 02/05/2016, V1.4 - Add SweetHome3D and models
+# -------------------------------------------------------
+
+# misc graphical apps
+sudo apt-get -y install exiv2 gcolor2 imagemagick dcraw
+
+# eye of gnome viewer
+sudo apt-get -y install eog
+
+# hugin panorama
+sudo apt-get -y install hugin
+
+# gimp : declare 2.8 PPA & install
+sudo add-apt-repository -y ppa:otto-kesselgulasch/gimp
+sudo apt-get update
+sudo apt-get -y install gimp gimp-plugin-registry
+
+# rawtherapee
+sudo add-apt-repository ppa:dhor/myway
+sudo apt-get update
+sudo apt-get -y install rawtherapee
+
+# SweetHome 3D and models
+sudo apt-get -y install sweethome3d sweethome3d-furniture sweethome3d-furniture-nonfree
+#  Update Contributions to latest version 
+curl -O -J -L http://heanet.dl.sourceforge.net/project/sweethome3d/SweetHome3D-models/3DModels-1.6.2/3DModels-Contributions-1.6.2.zip
+unzip -p 3DModels-Contributions-1.6.2.zip Contributions.sh3f | sudo tee /usr/share/sweethome3d/furniture/Contributions.sh3f >/dev/null
+#  Update Scopia to latest version
+curl -O -J -L http://netcologne.dl.sourceforge.net/project/sweethome3d/SweetHome3D-models/3DModels-1.6.2/3DModels-Scopia-1.6.2.zip
+unzip -p 3DModels-Scopia-1.6.2.zip Scopia.sh3f | sudo tee /usr/share/sweethome3d/furniture/Scopia.sh3f >/dev/null
+#  Update LucaPresidente to latest version
+curl -O -J -L http://netassist.dl.sourceforge.net/project/sweethome3d/SweetHome3D-models/3DModels-1.6.2/3DModels-LucaPresidente-1.6.2.zip
+unzip -p 3DModels-LucaPresidente-1.6.2.zip LucaPresidente.sh3f | sudo tee /usr/share/sweethome3d/furniture/LucaPresidente.sh3f >/dev/null
+
+# scan2folder tool
+wget --header='Accept-Encoding:none' https://raw.githubusercontent.com/NicolasBernaerts/ubuntu-scripts/master/scanner/scan2folder-install.sh
+. ./scan2folder-install.sh
+
+# GIMP XCF thumbnailer
+wget --header='Accept-Encoding:none' https://raw.githubusercontent.com/NicolasBernaerts/ubuntu-scripts/master/thumbnailer/gimp/gimp-tumbnailer-install.sh
+. ./gimp-tumbnailer-install.sh
+
+# RAW thumbnailer
+wget --header='Accept-Encoding:none' https://raw.githubusercontent.com/NicolasBernaerts/ubuntu-scripts/master/thumbnailer/raw/raw-tumbnailer-install.sh
+. ./raw-tumbnailer-install.sh
+
+# Graphviz DOT thumbnailer
+wget --header='Accept-Encoding:none' https://raw.githubusercontent.com/NicolasBernaerts/ubuntu-scripts/master/thumbnailer/graphviz/graphviz-thumbnailer-install.sh
+. ./graphviz-thumbnailer-install.sh
+
+# Image resize extension
+wget --header='Accept-Encoding:none' https://raw.githubusercontent.com/NicolasBernaerts/ubuntu-scripts/master/image/image-resize-install.sh
+. ./image-resize-install.sh
+
+# Image levels optimize extension
+wget --header='Accept-Encoding:none' https://raw.githubusercontent.com/NicolasBernaerts/ubuntu-scripts/master/image/image-level-optimize-install.sh
+. ./image-level-optimize-install.sh
+
+# Image IPTC tag manager extension
+wget --header='Accept-Encoding:none' https://raw.githubusercontent.com/NicolasBernaerts/ubuntu-scripts/master/image/image-iptc-install.sh
+. ./image-iptc-install.sh

@@ -1,0 +1,241 @@
+#!/bin/bash
+# ---------------------------------------------------
+#  Tool to write main XMP tags to compatible files
+#
+#  Depends on :
+#   * yad
+#   * exiftool
+#   * convert
+#
+#  Revision history :
+#   10/03/2014, V1.0 - Creation by N. Bernaerts
+#   08/05/2015, V1.1 - Code cleanup and optimization
+#   16/05/2015, V1.2 - Handle non UTF-8 tags
+#   20/08/2015, V2.0 - Complete rewrite for XMP tags
+#   20/08/2016, V2.1 - Mass tagging capability
+#   09/09/2016, V2.2 - Include tags rebuild option
+# ---------------------------------------------------
+
+# -------------------------------------------------
+#          Check tools availability
+# -------------------------------------------------
+
+# check yad, exiftool, iconv and convert
+command -v yad >/dev/null 2>&1 || { zenity --error --text="Please install yad"; exit 1; }
+command -v exiftool >/dev/null 2>&1 || { zenity --error --text="Please install exiftool [libimage-exiftool-perl]"; exit 1; }
+command -v convert >/dev/null 2>&1 || { zenity --error --text="Please install convert [imagemagick]"; exit 1; }
+
+# -------------------------------------------------------
+#             Check number of arguments
+# -------------------------------------------------------
+
+# if no argument, display help
+if [ $# -eq 0 ] 
+then
+  echo "Tool to write main XMP tags to compatible files"
+  echo "Parameters are :"
+  echo "  <photo1> <photo2> ...   List of picture files"
+  exit
+fi
+
+# calculate number of image files
+NBR_FILE=$#
+
+# -------------------------------------------------------
+#                  Initialisation
+# -------------------------------------------------------
+
+# load common functions
+#. tags-common
+
+# Configuration file : ~/.config/image-tag-xmp.conf
+FILE_CONF="$HOME/.config/tags-xmp.conf"
+
+# check configuration file
+[ -f "$FILE_CONF" ] || { zenity --error --text="Please create and configure ${FILE_CONF}"; exit 1; }
+
+# load default values from configuration file
+NEW_CITY=$(cat "${FILE_CONF}" | grep "city" | cut -d'=' -f2)
+NEW_COUNTRY=$(cat "${FILE_CONF}" | grep "country" | cut -d'=' -f2)
+NEW_AUTHOR=$(cat "${FILE_CONF}" | grep "author" | cut -d'=' -f2)
+NEW_THUMBNAIL=$(cat "${FILE_CONF}" | grep "thumbnail" | cut -d'=' -f2)
+
+# temporary files
+TAG_UTF8=$(mktemp --tmpdir "XXXXXXXX.utf8")
+TAG_MIE=$(mktemp --tmpdir "XXXXXXXX.mie")
+THUMB_ORIGINAL=$(mktemp --tmpdir "XXXXXXXX.jpg")
+rm -f "${TAG_UTF8}" "${TAG_MIE}" "${THUMB_ORIGINAL}"
+
+# -------------------------------------------------------
+#              Individual file parameters
+# -------------------------------------------------------
+
+if [ ${NBR_FILE} -eq 1 ]
+then
+  # set input file
+  INPUT_FILE="$1"
+
+  # read EXIF data
+  exiftool -S -DateTimeOriginal -DateTime -GPSDateTime -City -Country -Title -Description -Keywords -Author "${INPUT_FILE}" > "${TAG_UTF8}"
+
+  # try to extract thumbnail from EXIF tags
+  exiftool -b -ThumbnailImage "${INPUT_FILE}" > "${THUMB_ORIGINAL}"
+
+  # if failed, generate thumbnail from image (without any metadata)
+  [ ! -s "${THUMB_ORIGINAL}" ] && convert -strip -define jpeg:size=128x128 -auto-orient "${INPUT_FILE}[0]" -resize "128x" -quality 85 "${THUMB_ORIGINAL}"
+
+  # get meta-data
+  DATE=$(cat "${TAG_UTF8}" | grep "^DateTimeOriginal" | cut -d':' -f2- | tr -cd "0-9: " | xargs)
+  [ "${DATE}" = "" ] && DATE=$(cat "${TAG_UTF8}" | grep "^GPSDateTime" | cut -d':' -f2- | tr -cd "0-9: " | xargs)
+  [ "${DATE}" = "" ] && DATE=$(cat "${TAG_UTF8}" | grep "^DateTime" | cut -d':' -f2- | tr -cd "0-9: " | xargs)
+  TITLE=$(cat "${TAG_UTF8}" | grep "^Title" | cut -d':' -f2- | xargs)
+  CAPTION=$(cat "${TAG_UTF8}" | grep "^Description" | cut -d':' -f2- | xargs)
+  KEYWORD=$(cat "${TAG_UTF8}" | grep "^Keywords" | cut -d':' -f2- | xargs)
+  AUTHOR=$(cat "${TAG_UTF8}" | grep "^Author" | cut -d':' -f2- | xargs)
+  CITY=$(cat "${TAG_UTF8}" | grep "^City" | cut -d':' -f2- | xargs)
+  [ "${CITY}" = "" ] && CITY=$(cat "${FILE_CONF}" | grep "city" | cut -d'=' -f2)
+  COUNTRY=$(cat "${TAG_UTF8}" | grep "^Country" | cut -d':' -f2- | xargs)
+  [ "${COUNTRY}" = "" ] && COUNTRY=$(cat "${FILE_CONF}" | grep "country" | cut -d'=' -f2)
+
+  # generate the date digits and time
+  YEAR=$(echo ${DATE} | cut -d' ' -f1 | cut -d ':' -f1)
+  MONTH=$(echo ${DATE} | cut -d' ' -f1 | cut -d ':' -f2)
+  DAY=$(echo ${DATE} | cut -d' ' -f1 | cut -d ':' -f3)
+  TIME=$(echo ${DATE} | cut -d' ' -f2)
+  [ "${TIME}" = "" ] && TIME="12:00:00"
+
+  #  Display the tags editing dialog
+  RESULT=$(yad --center --title="XMP Tags - ${INPUT_FILE}" --width=800 --image="${THUMB_ORIGINAL}" --date-format="%d/%m/%Y" --window-icon="gtk-edit" --form --field="Title" --field="Description" --field="City" --field="Country" --field="Date:DT" --field="Time" --field="Keywords" --field="Author" --field="Include thumbnail:CHK" --field="Rebuild tags:CHK" "${TITLE}" "${CAPTION}" "${CITY}" "${COUNTRY}" "${DAY}/${MONTH}/${YEAR}" "${TIME}" "${KEYWORD}" "${AUTHOR}" "${NEW_THUMBNAIL}" "FALSE" --button="gtk-cancel:1" --button="gtk-ok:0" )
+  ACTION=$?
+
+  # if dialog has been validated, retrieve tags from dialog
+  if [ ${ACTION} = "0" ]
+  then
+    # retreive the values from resulting chain
+    NEW_TITLE=$(echo ${RESULT} |cut -d '|' -f1)
+    NEW_CAPTION=$(echo ${RESULT} |cut -d '|' -f2)
+    NEW_CITY=$(echo ${RESULT} |cut -d '|' -f3)
+    NEW_COUNTRY=$(echo ${RESULT} |cut -d '|' -f4)
+    NEW_DAY=$(echo ${RESULT} | cut -d '|' -f5 | cut -d'/' -f1)
+    NEW_MONTH=$(echo ${RESULT} | cut -d '|' -f5 | cut -d'/' -f2)
+    NEW_YEAR=$(echo ${RESULT} | cut -d '|' -f5 | cut -d'/' -f3)
+    NEW_TIME=$(echo ${RESULT} | cut -d '|' -f6)
+    NEW_KEYWORD=$(echo ${RESULT} | cut -d '|' -f7)
+    NEW_AUTHOR=$(echo ${RESULT} | cut -d '|' -f8)
+    NEW_THUMBNAIL=$(echo ${RESULT} | cut -d '|' -f9)
+    NEW_REBUILD=$(echo ${RESULT} | cut -d '|' -f10)
+
+    # set time and date
+    [ "${NEW_TIME}" = "" ] && NEW_TIME="12:00:00"
+    [ "${NEW_YEAR}" = "" ] && NEW_DATE="" || NEW_DATE="${NEW_YEAR}:${NEW_MONTH}:${NEW_DAY} ${NEW_TIME}"
+  fi
+
+# -------------------------------------------------------
+#              Mass tagging parameters
+# -------------------------------------------------------
+
+else
+  # Display the mass tags editing dialog
+  RESULT=$(yad --center --title="XMP tags - Mass Tagging of ${NBR_FILE} files" --width=800 --window-icon="gtk-edit" --form --field="Title" --field="Description" --field="City" --field="Country" --field="Keywords" --field="Author" --field="Include thumbnail:CHK" --field="Rebuild tags:CHK" "" "" "${CITY}" "${COUNTRY}" "" "${AUTHOR}" "${THUMBNAIL}" "FALSE" --button="gtk-cancel:1" --button="gtk-ok:0")
+  ACTION=$?
+
+  # if dialog has been canceled, exit
+  [ ${ACTION} = "1" ] && exit
+
+  # dialog has not been canceled, retreive values from resulting chain
+  NEW_TITLE=$(echo ${RESULT} |cut -d '|' -f1)
+  NEW_CAPTION=$(echo ${RESULT} |cut -d '|' -f2)
+  NEW_CITY=$(echo ${RESULT} |cut -d '|' -f3)
+  NEW_COUNTRY=$(echo ${RESULT} |cut -d '|' -f4)
+  NEW_KEYWORD=$(echo ${RESULT} | cut -d '|' -f5)
+  NEW_AUTHOR=$(echo ${RESULT} | cut -d '|' -f6)
+  NEW_THUMBNAIL=$(echo ${RESULT} | cut -d '|' -f7)
+  NEW_REBUILD=$(echo ${RESULT} | cut -d '|' -f8)
+fi
+
+# -------------------------------------------------------
+#                Loop thru all images
+# -------------------------------------------------------
+
+# set progress box title
+DIALOG_TITLE="XMP tags - Updating ${NBR_FILE} files"
+
+INDEX=0
+for INPUT_FILE in "$@"
+do
+  # if current photo is not skipped, update it
+  if [ "${ACTION}" = "0" ]
+  then
+    # display progress
+    echo $(((INDEX*100+50)/NBR_FILE))
+
+    # if tag rebuild,
+    if [ "${NEW_REBUILD}" = "TRUE" ] 
+    then
+      # prepare rebuild
+      echo "# File $((INDEX+1)) / ${NBR_FILE} - Rebuilding tags"
+      rm -f "${TAG_MIE}"
+
+      # export all tags
+      exiftool -TagsFromFile "${INPUT_FILE}" -all:all "${TAG_MIE}"
+
+      # remove all tags from file
+      exiftool -all= "${INPUT_FILE}"
+
+      # writing back exported tags
+      exiftool -TagsFromFile "${TAG_MIE}" -all:all "${INPUT_FILE}"
+    fi
+
+    # read the data embedded into the file
+    echo "# File $((INDEX+1)) / ${NBR_FILE} - Preparing new tags"
+    exiftool -S -DateTimeOriginal -DateTime -GPSDateTime -City -Country -Title -Description -Keywords -Author "${INPUT_FILE}" > "${TAG_UTF8}"
+
+    # if new meta-data set, get it, otherwise read original one
+    DATE=$(cat "${TAG_UTF8}" | grep "^DateTimeOriginal" | cut -d':' -f2- | tr -cd "0-9: " | xargs)
+    [ "${DATE}" = "" ] && DATE=$(cat "${TAG_UTF8}" | grep "^GPSDateTime" | cut -d':' -f2- | tr -cd "0-9: " | xargs)
+    [ "${DATE}" = "" ] && DATE=$(cat "${TAG_UTF8}" | grep "^DateTime" | cut -d':' -f2- | tr -cd "0-9: " | xargs)
+
+    [ "${NEW_DATE}"    != "" ] && DATE="${NEW_DATE}"
+    [ "${NEW_TITLE}"   != "" ] && TITLE="${NEW_TITLE}"     || TITLE=$(cat "${TAG_UTF8}" | grep "^Title" | cut -d':' -f2- | xargs)
+    [ "${NEW_CAPTION}" != "" ] && CAPTION="${NEW_CAPTION}" || CAPTION=$(cat "${TAG_UTF8}" | grep "^Description" | cut -d':' -f2- | xargs)
+    [ "${NEW_KEYWORD}" != "" ] && KEYWORD="${NEW_KEYWORD}" || KEYWORD=$(cat "${TAG_UTF8}" | grep "^Keywords" | cut -d':' -f2- | xargs)
+    [ "${NEW_AUTHOR}"  != "" ] && AUTHOR="${NEW_AUTHOR}"   || AUTHOR=$(cat "${TAG_UTF8}" | grep "^Author" | cut -d':' -f2- | xargs)
+    [ "${NEW_CITY}"    != "" ] && CITY="${NEW_CITY}"       || CITY=$(cat "${TAG_UTF8}" | grep "^City" | cut -d':' -f2- | xargs)
+    [ "${NEW_COUNTRY}" != "" ] && COUNTRY="${NEW_COUNTRY}" || COUNTRY=$(cat "${TAG_UTF8}" | grep "^Country" | cut -d':' -f2- | xargs)
+
+    # handle meta-data removal
+    [ "${NEW_TITLE}"   = "-" ] && TITLE=""
+    [ "${NEW_CAPTION}" = "-" ] && CAPTION=""
+    [ "${NEW_KEYWORD}" = "-" ] && KEYWORD=""
+    [ "${NEW_AUTHOR}"  = "-" ] && AUTHOR=""
+    [ "${NEW_CITY}"    = "-" ] && CITY=""
+    [ "${NEW_COUNTRY}" = "-" ] && COUNTRY=""
+
+    # update tags
+    echo "# File $((INDEX+1)) / ${NBR_FILE} - Writing Tags"
+    exiftool -overwrite_original -P -F "-alldates=${DATE}" "-Title=${TITLE}" "-Description=${CAPTION}" "-IPTC:City=${CITY}" "-XMP:City=${CITY}" "-Country=${COUNTRY}" "-IPTC:Keywords=${KEYWORD}" "-XMP:Keywords=${KEYWORD}" "-Author=${AUTHOR}" "${INPUT_FILE}"
+
+    # if needed, update thumbnail
+    if [ "${NEW_THUMBNAIL}" = "TRUE" ] 
+    then
+      # progress
+      echo "# File $((INDEX+1)) / ${NBR_FILE} - Writing Thumbnail"
+
+      # generate thumbnail from image
+      convert -strip -define jpeg:size=240x240 -auto-orient "${INPUT_FILE}[0]" -resize "240x" -quality 80 "${THUMB_ORIGINAL}"
+
+      # add thumbnail to the image file
+      exiftool -overwrite_original -P '-ThumbnailImage<='${THUMB_ORIGINAL} "${INPUT_FILE}"
+    fi
+  fi
+
+  # index increment
+  INDEX=$((INDEX+1))
+
+  # display progress
+  echo $(((INDEX*100)/NBR_FILE))
+
+done | zenity --width=400 --no-cancel --progress --auto-close --title "${DIALOG_TITLE}"
+
+# cleanup temporary files
+rm -f "${TAG_UTF8}" "${THUMB_ORIGINAL}" "${TAG_MIE}"

@@ -2,15 +2,14 @@
 # -------------------------------------------------------
 #  Video Stabilizer based on MLT and vid.stab
 #  For installation instructions, please check
-#  http://bernaerts.dyndns.org/linux/74-ubuntu/329-ubuntu-trusty-rotate-stabilize-video-melt-vidstab
+#  http://bernaerts.dyndns.org/linux/350-ubuntu-xenial-rotate-stabilize-video-melt-vidstab
 #  
 #  Depends on :
 #    * melt (from ppa:sunab/kdenlive-release)
-#    * vidstab (libvidstab1.0 package from ppa:sunab/kdenlive-release)
-#    * yad (from ppa:webupd8team/y-ppa-manager)
-#    * exiftool (from libimage-exiftool-perl package)
-#    * avconv
-#    * x264
+#    * vidstab (from ppa:sunab/kdenlive-release)
+#    * yad
+#    * exiftool
+#    * avconv and x264
 #
 #  Revision history :
 #    04/03/2012, V1.0 - Creation by N. Bernaerts
@@ -31,14 +30,17 @@
 #    26/07/2015, V3.5 - Change options of first pass to avoid some errors (thanks to Gustavo Lapido Loureiro)
 #                       Add number of thread as encoder option
 #                       Kill process and parent process in case of cancellation
+#    22/09/2015, V3.6 - Correction of a bug in final encoding options (thanks to Ted Bartlett)
+#    21/02/2016, V3.7 - Handle scientific notation for video rate (thanks to Aslanex)
+#    24/08/2016, V3.8 - Use specific build of melt for vid.stab (Ubuntu Xenial 16.04)
 # -------------------------------------------------------
 
 # -------------------------------------------------
 #          Check tools availability
 # -------------------------------------------------
 
-# check melt (ubuntu) or mlt-melt (fedora)
-CMD_MELT="melt"
+# check /opt/mlt-vidstab/melt (specific build with vid.stab filter) or melt (ubuntu) or mlt-melt (fedora)
+[ -f /opt/vidstab/melt ] && CMD_MELT="/opt/vidstab/melt" || CMD_MELT="melt"
 command -v $CMD_MELT >/dev/null 2>&1 || { CMD_MELT="mlt-melt"; }
 command -v $CMD_MELT >/dev/null 2>&1 || { zenity --error --text="Please install Melt from MLT framework"; exit 1; }
 
@@ -156,22 +158,22 @@ do
     --field="  - Optimal Zoom [ 0, 1, 2 ]:NUM" "${STAB_OPTZOOM}|0..2" \
     --field="  - Extra stabilize options" "${STAB_EXTRA}" \
     --field="Encoder:LBL" "final" \
-    --field="  - ${VIDEO_CODEC} video bitrate (Kbits/s):NUM" "${VIDEO_RATE}|1..50000" \
+    --field="  - ${VIDEO_CODEC} video bitrate (Kbits/s):NUM" "${VIDEO_RATE}|1..50000|100" \
     --field="  - ${AUDIO_CODEC} audio bitrate (Kbits/s):NUM" "${AUDIO_RATE}|1..320" \
     --field="  - Extra encoder parameters" "${ENCODE_OPTION}" )
 
- # retrieve parameters
+  # retrieve parameters
   ROTATE=$(echo ${CHOICE} | cut -d'|' -f1)
-  ROTATE_ANGLE=$(echo ${CHOICE} | cut -d'|' -f2 | sed 's/^\([0-9]*\).*$/\1/')
+  ROTATE_ANGLE=$(echo ${CHOICE} | cut -d'|' -f2)
   ROTATE_RATIO=$(echo ${CHOICE} | cut -d'|' -f3)
   STABILIZE=$(echo ${CHOICE} | cut -d'|' -f4)
   STAB_FILTER=$(echo ${CHOICE} | cut -d'|' -f5)
-  STAB_SHAKINESS=$(echo ${CHOICE} | cut -d'|' -f6 | sed 's/^\([0-9]*\).*$/\1/')
-  STAB_SMOOTHING=$(echo ${CHOICE} | cut -d'|' -f7 | sed 's/^\([0-9]*\).*$/\1/')
-  STAB_OPTZOOM=$(echo ${CHOICE} | cut -d'|' -f8 | sed 's/^\([0-9]*\).*$/\1/')
+  STAB_SHAKINESS=$(echo ${CHOICE} | cut -d'|' -f6)
+  STAB_SMOOTHING=$(echo ${CHOICE} | cut -d'|' -f7)
+  STAB_OPTZOOM=$(echo ${CHOICE} | cut -d'|' -f8)
   STAB_EXTRA=$(echo ${CHOICE} | cut -d'|' -f9)
-  VIDEO_RATE=$(echo ${CHOICE} | cut -d'|' -f11 | sed 's/^\([0-9]*\).*$/\1/')
-  AUDIO_RATE=$(echo ${CHOICE} | cut -d'|' -f12 | sed 's/^\([0-9]*\).*$/\1/')
+  VIDEO_RATE=$(echo ${CHOICE} | cut -d'|' -f11 | tr ',' '.' | awk '{ print sprintf("%.0f", $1); }')
+  AUDIO_RATE=$(echo ${CHOICE} | cut -d'|' -f12)
   ENCODE_OPTION=$(echo ${CHOICE} | cut -d'|' -f13)
 
   # if it is needed, add file to processing queue
@@ -305,7 +307,7 @@ do
   echo "# Generating file"
 
   # generate encoder parameters array
-  ARR_OPTION=($(cat "${ENCODE_OPTION}" | cut -d ";" --output-delimiter=" " -f 1-))
+  ARR_OPTION=($(echo "${ENCODE_OPTION}" | cut -d ";" --output-delimiter=" " -f 1-))
   ARR_ENCODE=("vcodec=${VIDEO_CODEC}" "b=${VIDEO_RATE}k" "acodec=${AUDIO_CODEC}" "ab=${AUDIO_RATE}k" "${ARR_OPTION[@]}" )
 
   # launch generation command

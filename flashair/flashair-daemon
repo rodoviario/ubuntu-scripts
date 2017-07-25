@@ -1,0 +1,49 @@
+#!/bin/bash
+# ---------------------------------------------------
+# Daemon to handle communication 
+#  with Toshiba Flashair SD Card
+# 
+# Revision history :
+#   30/03/2017, V1.0 - Creation by N. Bernaerts
+# ---------------------------------------------------
+
+# get flashair mount directory
+FLASHAIR_CONF="/etc/flashair.conf"
+[ ! -f ${FLASHAIR_CONF} ] && { echo "Configuration file ${FLASHAIR_CONF} missing"; exit 1; }
+FLASHAIR_ROOT=$(grep "^flashair-mount=" "${FLASHAIR_CONF}" | cut -d'=' -f2-)
+
+# infinite loop to detect filesystem events
+while true
+do
+	# wait for event on flashair card mount directory
+	FLASHAIR_EVENT=$(inotifywait -r -e open --exclude "/PRIVATE/" "${FLASHAIR_ROOT}")
+
+	# analyse event data
+	EVENT_PATH=$(echo "${FLASHAIR_EVENT}" | cut -d' ' -f1)
+	EVENT_ACTION=$(echo "${FLASHAIR_EVENT}" | cut -d' ' -f2)
+	EVENT_ELEMENT=$(echo "${FLASHAIR_EVENT}" | cut -d' ' -f3-)
+
+        # local directory
+        ELEMENT_PATH="${EVENT_PATH}${EVENT_ELEMENT}"
+
+	# action according to event
+	case "${EVENT_ACTION}" in
+
+		# directory content update
+		"OPEN,ISDIR")
+		flashair-command --update "${ELEMENT_PATH}"
+		;;
+
+		# file to upload (created or modified)
+		"CLOSE_WRITE,CLOSE")
+		;;
+
+		# file to delete
+		"MOVED_FROM")
+		;;
+
+		# default : do nothing
+		*)
+		;;
+	esac
+done

@@ -1,0 +1,33 @@
+#!/bin/sh
+# -------------------------------------------------------
+# Script to configure GnomeShell environment
+#
+# 16/08/2016, V1.0 - Creation
+# 24/08/2016, V1.1 - Migrate icon enable command to Gnome 3.18 
+# -------------------------------------------------------
+
+# install gnome shell extensions
+sudo apt-get -y install gnome-shell-extensions 
+
+# install nautilus-action
+sudo apt-get -y install nautilus-action
+
+# console management of gnomeshell extensions
+sudo wget -O /usr/local/bin/gnomeshell-extension-install https://raw.githubusercontent.com/NicolasBernaerts/ubuntu-scripts/master/ubuntugnome/gnomeshell-extension-install
+
+# gnome shell window bar icons
+gsettings set org.gnome.desktop.wm.preferences button-layout :minimize,maximize,close
+
+# enable icons for buttons and for menus
+gsettings set org.gnome.settings-daemon.plugins.xsettings overrides "{'Gtk/ButtonImages': <1>, 'Gtk/MenuImages': <1>}"
+
+# nautilus : remove nautilus action root menu
+echo "items-create-root-menu=false" >> $HOME/.config/nautilus-actions/nautilus-actions.conf
+
+# nautilus : add new empty files right click menu
+wget --header='Accept-Encoding:none' https://raw.githubusercontent.com/NicolasBernaerts/ubuntu-scripts/master/nautilus/nautilus-newfile-install.sh
+. ./nautilus-newfile-install.sh
+rm nautilus-newfile-install.sh
+
+# install docky
+sudo apt-get -y install docky

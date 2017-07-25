@@ -1,0 +1,204 @@
+#!/bin/bash
+# ---------------------------------------------------------------------------------
+#  Ubuntu 16.04 LTS Post-installation script
+#
+#  This script will run some commands as sudo
+# 
+#  20/12/2015, V1.0 - Migrated from Trusty
+#  16/05/2016, V1.1 - GTK tweak to allow Nautilus windows resize
+#  20/08/2016, V2.0 - Complete rework to merge different distribution post-install
+#  27/09/2016, V2.1 - Add GoPro USB mount bug correction
+#  26/12/2016, V2.2 - Add Docky launcher option
+# ---------------------------------------------------------------------------------
+
+# ---------------------------------------------------
+# ------------- User defined variable ---------------
+# ---------------------------------------------------
+
+DISTRI_NAME="xenial"
+
+# ---------------------------------------------------
+# ------------ Architecture detection ---------------
+# ---------------------------------------------------
+
+RESULT=$(uname -a | grep x86_64)
+[ "$RESULT" != "" ] && ARCHI="amd64" || ARCHI="i386"
+[ "$ARCHI" = "amd64" ] && X86ARCHI="64" || X86ARCHI="32"
+
+# ---------------------------------------------------
+# -------------- Parameters handling ----------------
+# ---------------------------------------------------
+
+# help message if no parameter
+if [ ${#} -eq 0 ];
+then
+    echo "Script to finalise Ubuntu ${DISTRI_NAME} installation."
+    echo "It will install some important packages not provided by default installation."
+    echo "Distribution choice is :"
+    echo "  --ubuntu          Run post-installation for a Ubuntu distribution (unity)"
+    echo "  --ubuntugnome     Run post-installation for a Ubuntu Gnome distribution"
+    echo "Extra parameters are :"
+    echo "  --docky           Add docky launcher"
+    echo "  --wifi            Add some tweaks for problematic wifi cards"
+    echo "  --ssd             Add some tweaks for SSD disk"
+    echo "  --touchpad        Add some tweaks for trackpad"
+    echo "  --assistance      Add remote assistance tools"
+    echo "  --gopro           Add GoPro bug correction"
+    exit 1
+fi
+
+# iterate thru parameters
+while test ${#} -gt 0
+do
+  case $1 in
+    --ubuntu) DISTRI_TYPE="UBUNTU"; shift; ;;
+    --ubuntugnome) DISTRI_TYPE="UBUNTUGNOME"; shift; ;;
+    --docky) DOCKY="ok"; shift; ;;
+    --wifi) WIFI="ok"; shift; ;;
+    --ssd) SSD="ok"; shift; ;;
+    --touchpad) TOUCHPAD="ok"; shift; ;;
+    --assistance) ASSIST="ok"; shift; ;;
+    --gopro) GOPRO="ok"; shift; ;;
+    *) shift; ;;
+  esac
+done
+
+# ---------------------------------------------------
+# -------------- Disable sudo timeout ---------------
+# ---------------------------------------------------
+
+sudo sh -c 'echo "\nDefaults timestamp_timeout=-1" >> /etc/sudoers'
+
+# ---------------------------------------------------
+# --------------- Full System Update ----------------
+# ---------------------------------------------------
+
+sudo apt-get update
+sudo apt-get -y dist-upgrade
+
+# ---------------------------------------------------
+# ----------------- Common Packages  ----------------
+# ---------------------------------------------------
+
+# office tools
+wget --header='Accept-Encoding:none' https://raw.githubusercontent.com/NicolasBernaerts/ubuntu-scripts/master/install/${DISTRI_NAME}/office
+. ./office
+rm office
+
+# graphical tools
+wget --header='Accept-Encoding:none' https://raw.githubusercontent.com/NicolasBernaerts/ubuntu-scripts/master/install/${DISTRI_NAME}/graphical
+. ./graphical
+rm graphical
+
+# multimedia tools
+wget --header='Accept-Encoding:none' https://raw.githubusercontent.com/NicolasBernaerts/ubuntu-scripts/master/install/${DISTRI_NAME}/multimedia
+. ./multimedia
+rm multimedia
+
+# internet tools
+wget --header='Accept-Encoding:none' https://raw.githubusercontent.com/NicolasBernaerts/ubuntu-scripts/master/install/${DISTRI_NAME}/internet
+. ./internet
+rm internet
+
+# android tools
+wget --header='Accept-Encoding:none' https://raw.githubusercontent.com/NicolasBernaerts/ubuntu-scripts/master/install/${DISTRI_NAME}/android
+. ./android
+rm android
+
+# misc utilities and tools
+wget --header='Accept-Encoding:none' https://raw.githubusercontent.com/NicolasBernaerts/ubuntu-scripts/master/install/${DISTRI_NAME}/utilities
+. ./utilities
+rm utilities
+
+# ---------------------------------------------------
+# -----------------  Common options  ----------------
+# ---------------------------------------------------
+
+# wifi tweaks
+if [ "${WIFI}" = "ok" ]
+then
+  wget --header='Accept-Encoding:none' https://raw.githubusercontent.com/NicolasBernaerts/ubuntu-scripts/master/install/${DISTRI_NAME}/wifi
+  . ./wifi
+  rm wifi
+fi
+
+# SSD tweaks
+if [ "${SSD}" = "ok" ]
+then
+  wget --header='Accept-Encoding:none' https://raw.githubusercontent.com/NicolasBernaerts/ubuntu-scripts/master/install/${DISTRI_NAME}/ssd
+  . ./ssd
+  rm ssd
+fi
+
+# remote assistance
+if [ "${ASSIST}" = "ok" ]
+then
+  wget --header='Accept-Encoding:none' https://raw.githubusercontent.com/NicolasBernaerts/ubuntu-scripts/master/install/${DISTRI_NAME}/assistance
+  . ./assistance
+  rm assistance
+fi
+
+# ---------------------------------------------------
+# -------------  Distribution specific  -------------
+# ---------------------------------------------------
+
+case ${DISTRI_TYPE} in
+    "UBUNTU") 
+      # gnome session fallback
+      wget --header='Accept-Encoding:none' https://raw.githubusercontent.com/NicolasBernaerts/ubuntu-scripts/master/install/${DISTRI_NAME}/gnome-fallback
+      . ./gnome-fallback
+      rm gnome-fallback
+      ;;
+    "UBUNTUGNOME") 
+      # gnomeshell
+      wget --header='Accept-Encoding:none' https://raw.githubusercontent.com/NicolasBernaerts/ubuntu-scripts/master/install/${DISTRI_NAME}/gnome-shell
+      . ./gnome-shell
+      rm gnome-shell
+      ;;
+    *) 
+      ;;
+esac
+
+# ---------------------------------------------------
+# ------------------ Common options -----------------
+# ---------------------------------------------------
+
+# docky : add desktop launcher
+if [ "${DOCKY}" = "ok" ]
+then
+  wget https://raw.githubusercontent.com/NicolasBernaerts/ubuntu-scripts/master/tools/docky-install.sh
+  . ./docky-install.sh
+  rm docky-install.sh
+fi
+
+# touchpad : add palm detection
+if [ "${TOUCHPAD}" = "ok" ]
+then
+  sudo mkdir --parent /etc/X11/xorg.conf.d
+  sudo wget --header='Accept-Encoding:none' -O /etc/X11/xorg.conf.d/touchpad-palm.conf https://raw.githubusercontent.com/NicolasBernaerts/ubuntu-scripts/master/X11/touchpad-palm.conf
+fi
+
+# correct GoPro USB mount under Xenial 
+if [ "${GOPRO}" = "ok" ]
+then
+  wget https://raw.githubusercontent.com/NicolasBernaerts/ubuntu-scripts/master/nautilus/nautilus-xenial-gopro-install.sh
+  . ./nautilus-xenial-gopro-install.sh --install
+  rm nautilus-xenial-gopro-install.sh
+fi
+
+# ---------------------------------------------------
+# ------------------ Package cleanup ----------------
+# ---------------------------------------------------
+
+# packages
+sudo apt-get -y autoremove
+sudo apt-get -y autoclean
+
+# purge thumbnails cache
+rm -r $HOME/.thumbnails
+
+# ---------------------------------------------------
+# -------------- Enable sudo timeout ---------------
+# ---------------------------------------------------
+
+sudo sed -i "/Defaults timestamp_timeout=-1/d" /etc/sudoers

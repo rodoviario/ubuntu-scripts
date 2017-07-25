@@ -1,0 +1,131 @@
+#!/bin/sh
+# -------------------------------------------------------
+#  LUbuntu 14.04 LTS Post-installation script
+#
+#  This script will run some commands as sudo
+# 
+#  25/05/2014, V1.0 - Creation by N. Bernaerts
+#  20/12/2014, V2.0 - Externalize scripts
+#  26/12/2014, V2.1 - Timeout sudo during installation
+# -------------------------------------------------------
+
+# ---------------------------------------------------
+# ------------- User defined variable ---------------
+# ---------------------------------------------------
+
+# define where screenshot are saved
+SCREENSHOT_DIR="$HOME/Images"
+
+# ---------------------------------------------------
+# ------------ Architecture detection ---------------
+# ---------------------------------------------------
+
+RESULT=`uname -a | grep x86_64`
+[ "$RESULT" != "" ] && ARCHI="amd64" || ARCHI="i386"
+[ "$ARCHI" = "amd64" ] && X86ARCHI="64" || X86ARCHI="32"
+
+# ---------------------------------------------------
+# -------------- Disable sudo timeout ---------------
+# ---------------------------------------------------
+
+sudo sh -c 'echo "\nDefaults timestamp_timeout=-1">>/etc/sudoers'
+
+# ---------------------------------------------------
+# --------------- Full System Update ----------------
+# ---------------------------------------------------
+
+sudo add-apt-repository -y ppa:lubuntu-dev/staging
+sudo apt-get update
+sudo apt-get -y dist-upgrade
+
+# ---------------------------------------------------
+# ----------------- Common Packages  ----------------
+# ---------------------------------------------------
+
+# misc utilities and tools
+wget --header='Accept-Encoding:none' https://raw.githubusercontent.com/NicolasBernaerts/ubuntu-scripts/master/install/trusty/utilities
+chmod +x ./utilities
+. ./utilities
+
+# office tools
+wget --header='Accept-Encoding:none' https://raw.githubusercontent.com/NicolasBernaerts/ubuntu-scripts/master/install/trusty/office
+chmod +x ./office
+. ./office
+
+# graphical tools
+wget --header='Accept-Encoding:none' https://raw.githubusercontent.com/NicolasBernaerts/ubuntu-scripts/master/install/trusty/graphical
+chmod +x ./graphical
+. ./graphical
+
+# multimedia tools
+wget --header='Accept-Encoding:none' https://raw.githubusercontent.com/NicolasBernaerts/ubuntu-scripts/master/install/trusty/multimedia
+chmod +x ./multimedia
+. ./multimedia
+
+# internet tools
+wget --header='Accept-Encoding:none' https://raw.githubusercontent.com/NicolasBernaerts/ubuntu-scripts/master/install/trusty/internet
+chmod +x ./internet
+. ./internet
+
+# android tools
+wget --header='Accept-Encoding:none' https://raw.githubusercontent.com/NicolasBernaerts/ubuntu-scripts/master/install/trusty/android
+chmod +x ./android
+. ./android
+
+# remote assistance
+wget --header='Accept-Encoding:none' https://raw.githubusercontent.com/NicolasBernaerts/ubuntu-scripts/master/install/trusty/assistance
+chmod +x ./assistance
+. ./assistance
+
+# wifi tweaks
+wget --header='Accept-Encoding:none' https://raw.githubusercontent.com/NicolasBernaerts/ubuntu-scripts/master/install/trusty/wifi
+chmod +x ./wifi
+. ./wifi
+
+# ---------------------------------------------------
+# ---------------- Specific packages ----------------
+# ---------------------------------------------------
+
+# dual display management
+sudo apt-get -y install arandr
+
+# trackpad and mouse management
+sudo apt-get -y install gpointing-device-settings
+
+# ---------------------------------------------------
+# ---------------------- Cleanup --------------------
+# ---------------------------------------------------
+
+# packages
+sudo apt-get -y autoremove
+sudo apt-get -y autoclean
+
+# purge thumbnails cache
+rm -r $HOME/.thumbnails
+
+# ---------------------------------------------------
+# --------------- Lubuntu 14.04 tweaks --------------
+# ---------------------------------------------------
+
+# Set double click time to 400ms (instead of 200ms)
+sed -i 's,.*doubleClickTime.*,<doubleClickTime>400<\/doubleClickTime>,' $HOME/.config/openbox/lubuntu-rc.xml
+ 
+# set target directory for screenshots
+sed -i 's,.*<command>lxsession-default screenshot<\/command>.*,      <command>scrot -e "mv $f '"$SCREENSHOT_DIR"'"<\/command>,' $HOME/.config/openbox/lubuntu-rc.xml
+sed -i 's,.*<command>lxsession-default screenshot window<\/command>.*,      <command>scrot --focused -e "mv $f '"$SCREENSHOT_DIR"'"<\/command>,' $HOME/.config/openbox/lubuntu-rc.xml
+
+# Declare shortcuts to switch single / dual display
+wget --header='Accept-Encoding:none' https://raw.githubusercontent.com/NicolasBernaerts/ubuntu-scripts/master/lubuntu/dual-display/dual-display-install.sh
+chmod +x ./dual-display-install.sh
+sudo ./dual-display-install.sh
+
+# Declare right click "empty trash" on desktop trash
+wget --header='Accept-Encoding:none' https://raw.githubusercontent.com/NicolasBernaerts/ubuntu-scripts/master/lubuntu/trash-empty/ask-trash-empty-install.sh
+chmod +x ./ask-trash-empty-install.sh
+. ./ask-trash-empty-install.sh
+
+# ---------------------------------------------------
+# -------------- Enable sudo timeout ---------------
+# ---------------------------------------------------
+
+sudo sed -i "/Defaults timestamp_timeout=-1/d" /etc/sudoers
